@@ -34,6 +34,10 @@
             .url = "git+https://codeberg.org/allyourcodebase/libogg#4accc2e0c6710e07a5070ac3bf0a9a319f9da6a6",
             .hash = "libogg-0.0.0+1.3.7-0KP-foYNAAAaj0YJOwRQs7kTN-ivzRMYTjtKzr6Apelj",
         },
+        .libwebp = .{
+            .url = "git+https://codeberg.org/alorans/libwebp#0053999e28d21f537a1aeb62439c1721c19e982f",
+            .hash = "libwebp-1.6.0-9OUnWjImAADMraE8QEmm57JAZXzTjo-DhNpv42Igz0DR",
+        },
 
         // This is used to compile some assembly files into object files for x86.
         // Without this, ffmpeg considers the build "crippled".

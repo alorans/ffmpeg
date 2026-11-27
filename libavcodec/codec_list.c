@@ -175,6 +175,8 @@ static const FFCodec * const codec_list[] = {
     &ff_xsub_encoder,
     &ff_libmp3lame_encoder,
     &ff_libvorbis_encoder,
+    &ff_libwebp_encoder,
+    &ff_libwebp_anim_encoder,
 #if CONFIG_H263_V4L2M2M_ENCODER
     &ff_h263_v4l2m2m_encoder,
 #endif

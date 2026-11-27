@@ -33,6 +33,10 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    const libwebp_dep = b.dependency("libwebp", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const omit_frame_pointer = false;
     const pic = true;
@@ -49,6 +53,11 @@ pub fn build(b: *std.Build) void {
     lib.root_module.linkLibrary(libmp3lame_dep.artifact("mp3lame"));
     lib.root_module.linkLibrary(libvorbis_dep.artifact("vorbis"));
     lib.root_module.linkLibrary(libogg_dep.artifact("ogg"));
+    lib.root_module.linkLibrary(libwebp_dep.artifact("webp"));
+    lib.root_module.linkLibrary(libwebp_dep.artifact("webpdecoder"));
+    lib.root_module.linkLibrary(libwebp_dep.artifact("webpmux"));
+    lib.root_module.linkLibrary(libwebp_dep.artifact("webpdemux"));
+    lib.root_module.addIncludePath(libwebp_dep.artifact("webp").getEmittedIncludeTree());
     lib.root_module.addIncludePath(b.path("."));
     if (is_windows) {
         // Upstream configure's mingw EXTRALIBS.
@@ -677,7 +686,7 @@ pub fn build(b: *std.Build) void {
         .CONFIG_LIBVORBIS = true,
         .CONFIG_LIBVPX = false,
         .CONFIG_LIBVVENC = false,
-        .CONFIG_LIBWEBP = false,
+        .CONFIG_LIBWEBP = true,
         .CONFIG_LIBXEVD = false,
         .CONFIG_LIBXEVDB = false,
         .CONFIG_LIBXEVE = false,
@@ -1824,8 +1833,8 @@ pub fn build(b: *std.Build) void {
         .CONFIG_LIBVPX_VP8_ENCODER = false,
         .CONFIG_LIBVPX_VP9_ENCODER = false,
         .CONFIG_LIBVVENC_ENCODER = false,
-        .CONFIG_LIBWEBP_ANIM_ENCODER = false,
-        .CONFIG_LIBWEBP_ENCODER = false,
+        .CONFIG_LIBWEBP_ANIM_ENCODER = true,
+        .CONFIG_LIBWEBP_ENCODER = true,
         .CONFIG_LIBX262_ENCODER = false,
         .CONFIG_LIBX264_ENCODER = false,
         .CONFIG_LIBX264RGB_ENCODER = false,
@@ -4639,9 +4648,9 @@ const all_sources = [_][]const u8{
     //"libavcodec/libvpxdec.c",
     //"libavcodec/libvpxenc.c",
     //"libavcodec/libvvenc.c",
-    //"libavcodec/libwebpenc.c",
-    //"libavcodec/libwebpenc_animencoder.c",
-    //"libavcodec/libwebpenc_common.c",
+    "libavcodec/libwebpenc.c",
+    "libavcodec/libwebpenc_animencoder.c",
+    "libavcodec/libwebpenc_common.c",
     //"libavcodec/libx264.c",
     //"libavcodec/libx265.c",
     //"libavcodec/libxavs.c",
