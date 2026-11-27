@@ -102,6 +102,10 @@ pub extern fn avcodec_parameters_to_context(codec: *Codec.Context, par: *const C
 pub extern fn avcodec_open2(avctx: *Codec.Context, codec: *const Codec, options: ?*Dictionary.Mutable) c_int;
 /// Prefer `CodecContext.send_packet`.
 pub extern fn avcodec_send_packet(avctx: *Codec.Context, avpkt: ?*const Packet) c_int;
+/// Prefer `CodecContext.receive_packet`.
+pub extern fn avcodec_receive_packet(avctx: *Codec.Context, avpkt: ?*const Packet) c_int;
+/// Prefer `CodecContext.send_frame`.
+pub extern fn avcodec_send_frame(avctx: *Codec.Context, frame: ?*const Frame) c_int;
 /// Prefer `CodecContext.receive_frame`.
 pub extern fn avcodec_receive_frame(avctx: *Codec.Context, frame: *Frame) c_int;
 /// Prefer `CodecContext.flush_buffers`.
@@ -130,6 +134,8 @@ pub extern fn av_packet_alloc() ?*Packet;
 pub extern fn av_packet_free(pkt: *?*Packet) void;
 /// Prefer `Packet.ref`.
 pub extern fn av_packet_ref(dst: *Packet, src: *const Packet) c_int;
+/// Prefer `Packet.new`.
+pub extern fn av_new_packet(pkt: *Packet, size: c_int) c_int;
 /// Prefer `Packet.unref`.
 pub extern fn av_packet_unref(pkt: *Packet) void;
 
@@ -137,6 +143,8 @@ pub extern fn av_packet_unref(pkt: *Packet) void;
 pub extern fn av_frame_alloc() ?*Frame;
 /// Prefer `Frame.free`.
 pub extern fn av_frame_free(frame: *?*Frame) void;
+/// Prefer `Frame.get_buffer`.
+pub extern fn av_frame_get_buffer(frame: *Frame, @"align": c_int) c_int;
 /// Prefer `Frame.ref`.
 pub extern fn av_frame_ref(dst: *Frame, src: *const Frame) c_int;
 /// Prefer `Frame.unref`.
@@ -1398,7 +1406,12 @@ pub const Packet = extern struct {
         av_packet_free(&keep_your_dirty_hands_off_my_pointers_ffmpeg);
     }
 
-    pub fn ref(dst: *Packet, src: *const Packet) !void {
+    /// Allocate packet payload buffer.
+    pub fn new(p: *Packet, size: usize) Error!void {
+        _ = try wrap(av_new_packet(p, @intCast(size)));
+    }
+
+    pub fn ref(dst: *Packet, src: *const Packet) Error!void {
         _ = try wrap(av_packet_ref(dst, src));
     }
 
@@ -2814,6 +2827,70 @@ pub const Codec = extern struct {
             avcodec_free_context(&keep_your_dirty_hands_off_my_pointers_ffmpeg);
         }
 
+        /// Sets the codec context parameter with the given name to value.
+        ///
+        /// SI postfixes and some named scalars are supported.
+        ///
+        /// If the field is of a numeric type, it has to be a numeric or named
+        /// scalar. Behavior with more than one scalar and +- infix operators is
+        /// undefined.
+        ///
+        /// If the field is of a flags type, it has to be a sequence of numeric
+        /// scalars or named flags separated by '+' or '-'. Prefixing a flag with
+        /// '+' causes it to be set without affecting the other flags; similarly,
+        /// '-' unsets a flag.
+        ///
+        /// If the field is of a dictionary type, it has to be a ':' separated list
+        /// of key=value parameters. Values containing ':' special characters must
+        /// be escaped.
+        ///
+        /// Asserts:
+        /// * a matching named option exists
+        /// * the value is valid and in range
+        pub fn opt_set(
+            c: *Context,
+            name: [*:0]const u8,
+            /// If the field being set is not of a string type, then the given
+            /// string is parsed.
+            val: [*:0]const u8,
+        ) void {
+            _ = wrap(av_opt_set(c, name, val, .{ .CHILDREN = true })) catch unreachable;
+        }
+
+        /// Sets the codec context parameter with the given name to an integer value.
+        ///
+        /// Asserts:
+        /// * a matching named option exists
+        /// * the value is valid and in range
+        pub fn opt_set_int(c: *Context, name: [*:0]const u8, val: i64) void {
+            _ = wrap(av_opt_set_int(c, name, val, .{ .CHILDREN = true })) catch unreachable;
+        }
+
+        /// Sets the codec context parameter with the given name to a 64-bit float value.
+        ///
+        /// Asserts:
+        /// * a matching named option exists
+        /// * the value is valid and in range
+        pub fn opt_set_double(c: *Context, name: [*:0]const u8, val: f64) void {
+            _ = wrap(av_opt_set_double(c, name, val, .{ .CHILDREN = true })) catch unreachable;
+        }
+
+        /// Sets the codec context parameter with the given name to a `Rational` value.
+        ///
+        /// Asserts:
+        /// * a matching named option exists
+        /// * the value is valid and in range
+        pub fn opt_set_q(c: *Context, name: [*:0]const u8, val: Rational) void {
+            _ = wrap(av_opt_set_q(c, name, val, .{ .CHILDREN = true })) catch unreachable;
+        }
+
+        /// Get a value of the option with the given name.
+        pub fn opt_get_double(c: *Context, option_name: [*:0]const u8) Error!f64 {
+            var result: f64 = undefined;
+            _ = try wrap(av_opt_get_double(c, option_name, .{ .CHILDREN = true }, &result));
+            return result;
+        }
+
         /// Fill the codec context based on the values from the supplied codec
         /// parameters.
         ///
@@ -2875,6 +2952,58 @@ pub const Codec = extern struct {
             packet: ?*const Packet,
         ) Error!void {
             _ = try wrap(avcodec_send_packet(cc, packet));
+        }
+
+        /// Return encoded output packets from an encoder.
+        ///
+        /// The avpkt parameter will be unreferenced before new data is written to it.
+        ///
+        /// The `CodecContext` MUST have been opened with `open` before packets may
+        /// be retrieved from the decoder.
+        ///
+        /// Notable error codes:
+        /// * `Error.WouldBlock`
+        /// * `Error.EndOfFile`
+        /// * others are also possible
+        pub fn receive_packet(
+            cc: *Context,
+            /// The output `Packet` to receive the encoded data.
+            ///
+            /// Usually, this will be a single video frame, or several complete
+            /// audio frames.
+            ///
+            /// The packet will be unreferenced by the function before new data
+            /// is written to it. Ownership of the returned packet belongs to the
+            /// caller, who must unreference or free it when done.
+            packet: ?*const Packet,
+        ) Error!void {
+            _ = try wrap(avcodec_receive_packet(cc, packet));
+        }
+
+        /// Supply a raw video or audio frame to the encoder.
+        ///
+        /// Use `recieve_packet` to retrieved buffered output packets.
+        ///
+        /// Notable error codes:
+        /// * `Error.WouldBlock`
+        /// * `Error.EndOfFile`
+        /// * others are also possible
+        pub fn send_frame(
+            avctx: *Context,
+            /// The input `Frame` to the encoder.
+            ///
+            /// Ownership of the frame remains with the caller, and the encoder
+            /// will not write to the frame. The encoder may create a referece
+            /// to the frame data or copy it if it is not reference-counted.
+            ///
+            /// It can be NULL (or an AVFrame with data set to NULL and nb_samples
+            /// set to 0); in this case, it is considered a flush packet,
+            /// which signals the end of the stream. Sending the first flush
+            /// packet will return success. Subsequent ones are unnecessary
+            /// and will return AVERROR_EOF.
+            frame: ?*const Frame,
+        ) Error!void {
+            _ = try wrap(avcodec_send_frame(avctx, frame));
         }
 
         /// Return decoded output data from a decoder or encoder (when the
@@ -3066,7 +3195,7 @@ pub const Frame = extern struct {
     /// Returns a `Frame` filled with default values.
     ///
     /// This only allocates the `Frame` itself, not the data buffers. Those
-    /// must be allocated through other means, e.g. with av_frame_get_buffer()
+    /// must be allocated through other means, e.g. with Frame.get_buffer()
     /// or manually.
     pub fn alloc() error{OutOfMemory}!*Frame {
         return av_frame_alloc() orelse error.OutOfMemory;
@@ -3078,6 +3207,11 @@ pub const Frame = extern struct {
     pub fn free(frame: *Frame) void {
         var keep_your_dirty_hands_off_my_pointers_ffmpeg: ?*Frame = frame;
         av_frame_free(&keep_your_dirty_hands_off_my_pointers_ffmpeg);
+    }
+
+    /// Allocates a reference-counted data buffer for a Frame.
+    pub fn get_buffer(frame: *Frame, @"align": usize) Error!void {
+        _ = try wrap(av_frame_get_buffer(frame, @intCast(@"align")));
     }
 
     /// Set up a new reference to the data described by the source frame.
@@ -3818,7 +3952,7 @@ pub const swr = struct {
         pub fn alloc() error{OutOfMemory}!*Context {
             return swr_alloc() orelse error.OutOfMemory;
         }
-        pub fn alloc_set_opts(out_ch_layout: *const ChannelLayout, out_sample_fmt: SampleFormat, out_sample_rate: c_int, in_ch_layout: *const ChannelLayout, in_sample_fmt: SampleFormat, in_sample_rate: c_int, log_offset: c_int, log_ctx: ?[*]u8) !*Context {
+        pub fn alloc_set_opts(out_ch_layout: *const ChannelLayout, out_sample_fmt: SampleFormat, out_sample_rate: c_int, in_ch_layout: *const ChannelLayout, in_sample_fmt: SampleFormat, in_sample_rate: c_int, log_offset: c_int, log_ctx: ?[*]u8) Error!*Context {
             var swr_context: ?*Context = null;
             _ = try wrap(swr_alloc_set_opts2(&swr_context, out_ch_layout, out_sample_fmt, out_sample_rate, in_ch_layout, in_sample_fmt, in_sample_rate, log_offset, log_ctx));
             return swr_context.?;
@@ -3829,7 +3963,7 @@ pub const swr = struct {
         pub fn free(swr_context: *Context) void {
             swr_free(@ptrCast(@constCast(&swr_context)));
         }
-        pub fn convert(swr_context: *Context, out: [*]const [*]u8, out_count: c_int, in: [*]const [*]const u8, in_count: c_int) !c_uint {
+        pub fn convert(swr_context: *Context, out: [*]const [*]u8, out_count: c_int, in: [*]const [*]const u8, in_count: c_int) Error!c_uint {
             return try wrap(swr_convert(swr_context, out, out_count, in, in_count));
         }
         pub fn get_delay(swr_context: *Context, base: i64) i64 {
