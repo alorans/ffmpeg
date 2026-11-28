@@ -234,6 +234,9 @@ pub extern fn av_samples_fill_arrays(audio_data: [*]?[*]u8, linesize: ?[*]c_int,
 /// Prefer `Rounding.rescale_rnd`
 pub extern fn av_rescale_rnd(a: i64, b: i64, c: i64, rounding: Rounding) i64;
 
+/// Prefer `PixelFormatDescriptor.get`
+extern fn av_pix_fmt_desc_get(pix_fmt: PixelFormat) ?*const PixelFormatDescriptor;
+
 /// Function pointer to a function to perform the transform.
 ///
 /// Using a different context than the one allocated during `av_tx_init` is not
@@ -372,6 +375,8 @@ pub const Error = error{
     StreamNotFound,
     /// Requested feature is flagged experimental. Set strict_std_compliance if you really want to use it.
     FFmpegExperimentalFeature,
+    /// Unable to get description because the pixel format is unknown.
+    UnknownPixelFormat,
 
     /// * input is not accepted in the current state - user must read output with
     ///   `Codec.Context.receive_frame` (once all output is read, the packet
@@ -1716,6 +1721,32 @@ pub const PixelFormat = enum(c_int) {
     P412LE = 225,
     GBRAP14BE = 226,
     GBRAP14LE = 227,
+};
+
+pub const PixelFormatDescriptor = extern struct {
+    name: [*:0]const u8,
+    nb_components: u8,
+    log2_chroma_w: u8,
+    log2_chroma_h: u8,
+    flags: u64,
+
+    pub const Flag = enum(c_int) {
+        BE = 1 << 0,
+        PAL = 1 << 1,
+        BITSTREAM = 1 << 2,
+        HWACCEL = 1 << 3,
+        PLANAR = 1 << 4,
+        RGB = 1 << 5,
+        PSEUDOPAL = 1 << 6,
+        ALPHA = 1 << 7,
+        BAYER = 1 << 8,
+        FLOAT = 1 << 9,
+    };
+
+    // Return the pixel format descriptor for the provided pixel format.
+    pub fn get(pix_fmt: PixelFormat) Error!*const PixelFormatDescriptor {
+        return av_pix_fmt_desc_get(pix_fmt) orelse error.UnknownPixelFormat;
+    }
 };
 
 pub const SampleFormat = enum(c_int) {
